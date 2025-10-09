@@ -197,7 +197,7 @@ def getitem_literal_idx(tup, idx):
         return None
 
     idx_val = idx.literal_value
-    def getitem_literal_idx_impl(tup, idx):
+    def getitem_literal_idx_impl(tup, idx, idx_val=idx_val):
         return tup[idx_val]
 
     return getitem_literal_idx_impl
