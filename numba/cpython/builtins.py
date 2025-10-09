@@ -23,6 +23,11 @@ from numba.core.errors import (TypingError, LoweringError,
 from numba.misc.special import literal_unroll
 from numba.core.typing.asnumbatype import as_numba_type
 
+_float_type_map = {
+    32: ir.FloatType,
+    64: ir.DoubleType,
+}
+
 
 @overload(operator.truth)
 def ol_truth(val):
@@ -523,13 +528,11 @@ def lower_get_type_max_value(context, builder, sig, args):
         res = ir.Constant(lty, val)
     elif isinstance(typ, types.Float):
         bw = typ.bitwidth
-        if bw == 32:
-            lty = ir.FloatType()
-        elif bw == 64:
-            lty = ir.DoubleType()
-        else:
+        try:
+            lty_cls = _float_type_map[bw]
+        except KeyError:
             raise NotImplementedError("llvmlite only supports 32 and 64 bit floats")
-        npty = getattr(np, 'float{}'.format(bw))
+        lty = lty_cls()
         res = ir.Constant(lty, np.inf)
     elif isinstance(typ, (types.NPDatetime, types.NPTimedelta)):
         bw = 64
