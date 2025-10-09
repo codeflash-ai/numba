@@ -1,6 +1,5 @@
 from collections import namedtuple
 import math
-from functools import reduce
 
 import numpy as np
 import operator
@@ -194,23 +193,28 @@ def do_minmax(context, builder, argtys, args, cmpop):
     assert len(argtys) == len(args), (argtys, args)
     assert len(args) > 0
 
-    def binary_minmax(accumulator, value):
-        # This is careful to reproduce Python's algorithm, e.g.
-        # max(1.5, nan, 2.5) should return 2.5 (not nan or 1.5)
-        accty, acc = accumulator
-        vty, v = value
-        ty = context.typing_context.unify_types(accty, vty)
-        assert ty is not None
-        acc = context.cast(builder, acc, accty, ty)
-        v = context.cast(builder, v, vty, ty)
-        cmpsig = typing.signature(types.boolean, ty, ty)
-        ge = context.get_function(cmpop, cmpsig)
-        pred = ge(builder, (v, acc))
-        res = builder.select(pred, v, acc)
-        return ty, res
+    typing_context = context.typing_context
+    cast = context.cast
+    get_function = context.get_function
 
-    typvals = zip(argtys, args)
-    resty, resval = reduce(binary_minmax, typvals)
+    # Precompute unified type for all arguments
+    ty = argtys[0]
+    for vty in argtys[1:]:
+        ty = typing_context.unify_types(ty, vty)
+        assert ty is not None
+
+    cmpsig = typing.signature(types.boolean, ty, ty)
+    ge = get_function(cmpop, cmpsig)
+
+    # Cast all arguments to unified type up front
+    casted_args = [cast(builder, v, vty, ty) if vty != ty else v
+                   for v, vty in zip(args, argtys)]
+
+    resval = casted_args[0]
+    for v in casted_args[1:]:
+        pred = ge(builder, (v, resval))
+        resval = builder.select(pred, v, resval)
+
     return resval
 
 
