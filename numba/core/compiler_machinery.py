@@ -261,7 +261,7 @@ class PassManager(object):
         """
         Patches the error to show the stage that it arose in.
         """
-        newmsg = "{desc}\n{exc}".format(desc=desc, exc=exc)
+        newmsg = f"{desc}\n{exc}"
         exc.args = (newmsg,)
         return exc
 
