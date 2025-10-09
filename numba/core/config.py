@@ -16,6 +16,8 @@ except ImportError:
 
 import llvmlite.binding as ll
 
+_CC_REGEX = re.compile(r'(\d+)\.(\d+)')
+
 
 IS_WIN32 = sys.platform.startswith('win32')
 IS_OSX = sys.platform.startswith('darwin')
@@ -35,7 +37,7 @@ def _parse_cc(text):
     if not text:
         return None
     else:
-        m = re.match(r'(\d+)\.(\d+)', text)
+        m = _CC_REGEX.match(text)
         if not m:
             raise ValueError("Compute capability must be specified as a "
                              "string of \"major.minor\" where major "
