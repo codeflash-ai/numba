@@ -146,26 +146,37 @@ class BaseTuple(ConstSized, Hashable):
         """
         Instantiate the right tuple type for the given element types.
         """
+        # Minimize attribute lookups and redundant calculations
         if pyclass is not None and pyclass is not tuple:
             # A subclass => is it a namedtuple?
             assert issubclass(pyclass, tuple)
             if hasattr(pyclass, "_asdict"):
-                tys = tuple(map(unliteral, tys))
-                homogeneous = is_homogeneous(*tys)
+                # Map unliteral and avoid creating new tuples when not needed
+                tys_unliteral = [unliteral(ty) for ty in tys]
+                homogeneous = is_homogeneous(*tys_unliteral)
                 if homogeneous:
-                    return NamedUniTuple(tys[0], len(tys), pyclass)
+                    return NamedUniTuple(tys_unliteral[0], len(tys_unliteral), pyclass)
                 else:
-                    return NamedTuple(tys, pyclass)
+                    return NamedTuple(tuple(tys_unliteral), pyclass)
         else:
+            # Try to identify UniTuple via unified_function_type early
             dtype = utils.unified_function_type(tys)
             if dtype is not None:
                 return UniTuple(dtype, len(tys))
-            # non-named tuple
-            homogeneous = is_homogeneous(*tys)
+            # Check for homogeneity: copy tys into a list once for multiple uses
+            tys_seq = tuple(tys)
+            if not tys_seq:
+                return cls._make_heterogeneous_tuple(tys_seq)
+            first_ty = tys_seq[0]
+            homogeneous = True
+            for ty in tys_seq[1:]:
+                if ty != first_ty:
+                    homogeneous = False
+                    break
             if homogeneous:
-                return cls._make_homogeneous_tuple(tys[0], len(tys))
+                return cls._make_homogeneous_tuple(first_ty, len(tys_seq))
             else:
-                return cls._make_heterogeneous_tuple(tys)
+                return cls._make_heterogeneous_tuple(tys_seq)
 
     @classmethod
     def _make_homogeneous_tuple(cls, dtype, count):
