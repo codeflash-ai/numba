@@ -452,23 +452,31 @@ def deprecated(arg):
       @deprecated('new_func')
       def old_func(): ..."""
 
-    subst = arg if isinstance(arg, str) else None
+    # Check for the (much more common) decorator-without-argument case first
+    if not isinstance(arg, str):
+        func = arg
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            warnings.warn(
+                f'Call to deprecated function "{func.__name__}".',
+                category=DeprecationWarning, stacklevel=2
+            )
+            return func(*args, **kwargs)
+        return wrapper
+
+    subst = arg
 
     def decorator(func):
+        @wraps(func)
         def wrapper(*args, **kwargs):
-            msg = "Call to deprecated function \"{}\"."
-            if subst:
-                msg += "\n Use \"{}\" instead."
-            warnings.warn(msg.format(func.__name__, subst),
-                          category=DeprecationWarning, stacklevel=2)
+            warnings.warn(
+                f'Call to deprecated function "{func.__name__}".\n Use "{subst}" instead.',
+                category=DeprecationWarning, stacklevel=2
+            )
             return func(*args, **kwargs)
+        return wrapper
 
-        return wraps(func)(wrapper)
-
-    if not subst:
-        return decorator(arg)
-    else:
-        return decorator
+    return decorator
 
 
 class WarningsFixer(object):
