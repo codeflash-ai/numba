@@ -33,6 +33,8 @@ import re
 
 from numba.core import types
 
+_ascii_allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+
 
 # According the scheme, valid characters for mangled names are [a-zA-Z0-9_].
 # We borrow the '_' as the escape character to encode invalid char into
@@ -70,14 +72,26 @@ def _escape_string(text):
     Multibyte characters are encoded into utf8 and converted into the above
     hex format.
     """
+    # The hot path is re.sub() and repl, which are responsible for nearly
+    # all time spent in profiling. Let's refactor to avoid regex and use
+    # a one-pass, memory-efficient approach. This avoids costly re.sub
+    # and .encode('utf8') for each match object.
+    #
+    # We must preserve all escaping logic. We can save time by using
+    # a simple for-loop and handling ASCII and UTF-8 bytes directly.
 
-    def repl(m):
-        return ''.join(('_%02x' % ch)
-                       for ch in m.group(0).encode('utf8'))
-    ret = re.sub(_re_invalid_char, repl, text)
+    result = []
+    for ch in text:
+        if ch in _ascii_allowed:
+            result.append(ch)
+        else:
+            # Non-ASCII: encode into UTF-8 bytes, escape each byte as _xx
+            utf8_bytes = ch.encode('utf8')
+            for b in utf8_bytes:
+                result.append('_%02x' % b)
+    ret = ''.join(result)
     # Return str if we got a unicode (for py2)
-    if not isinstance(ret, str):
-        return ret.encode('ascii')
+    # In Python 3, str is default and we never get unicode type other than str.
     return ret
 
 
@@ -115,8 +129,11 @@ def mangle_identifier(ident, template_params='', *, abi_tags=(), uid=None):
     if uid is not None:
         # Add uid to abi-tags
         abi_tags = (f"v{uid}", *abi_tags)
-    parts = [_len_encoded(_escape_string(x)) for x in ident.split('.')]
-    enc_abi_tags = list(map(mangle_abi_tag, abi_tags))
+    splitted = ident.split('.')
+    # Hot path: tuple/list comprehensions, avoid map+lambda overhead
+    parts = [_len_encoded(_escape_string(x)) for x in splitted]
+    # For small tuples, list comprehension is faster than map(mangle_abi_tag, ...)
+    enc_abi_tags = [mangle_abi_tag(x) for x in abi_tags]
     extras = template_params + ''.join(enc_abi_tags)
     if len(parts) > 1:
         return 'N%s%sE' % (''.join(parts), extras)
