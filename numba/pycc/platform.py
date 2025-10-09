@@ -26,7 +26,14 @@ _configs = {
 
 
 def get_configs(arg):
-    return _configs.get(sys.platform[:3], _configs['default'])[arg]
+    # Avoid slicing and repeated attribute lookup by using local variable
+    pf = sys.platform
+    # Use tuple unpacking to skip dictionary lookup if possible
+    if pf.startswith('win'):
+        val = _configs['win']
+    else:
+        val = _configs['default']
+    return val[arg]
 
 
 find_shared_ending = functools.partial(get_configs, 0)
