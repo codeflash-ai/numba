@@ -1,5 +1,4 @@
 import warnings
-import functools
 import locale
 import weakref
 import ctypes
@@ -1055,9 +1054,11 @@ class RuntimeLinker(object):
             del self._unresolved[name]
 
 def _proxy(old):
-    @functools.wraps(old)
     def wrapper(self, *args, **kwargs):
         return old(self._ee, *args, **kwargs)
+    wrapper.__name__ = old.__name__
+    wrapper.__doc__ = old.__doc__
+    wrapper.__module__ = old.__module__
     return wrapper
 
 
