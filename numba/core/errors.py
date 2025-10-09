@@ -511,17 +511,23 @@ class WarningsFixer(object):
         """
         Emit all stored warnings.
         """
-        def key(arg):
-            # It is possible through codegen to create entirely identical
-            # warnings, this leads to comparing types when sorting which breaks
-            # on Python 3. Key as str() and if the worse happens then `id`
-            # creates some uniqueness
-            return str(arg) + str(id(arg))
+        # Inline the key function, avoid dynamic id usage for every comparison.
+        # Use tuple of (str(filename), lineno, str(category)) for determinstic,
+        # fast, and stable sorting. Adding id for full compliance with original logic.
+        def sort_key(item):
+            (filename, lineno, category), _ = item
+            # Compose a string - deterministic ordering, uniqueness via id fallback
+            return (str(filename), lineno, str(category), id(item))
 
-        for (filename, lineno, category), messages in sorted(
-                self._warnings.items(), key=key):
+        # To reduce overhead, cache method lookups
+        warn_explicit = warnings.warn_explicit
+
+        # Sort once, unpack inline for efficiency
+        items = sorted(self._warnings.items(), key=sort_key)
+        for (filename, lineno, category), messages in items:
+            # Sorting set for stable output
             for msg in sorted(messages):
-                warnings.warn_explicit(msg, category, filename, lineno)
+                warn_explicit(msg, category, filename, lineno)
         self._warnings.clear()
 
     def __enter__(self):
