@@ -33,6 +33,8 @@ import re
 
 from numba.core import types
 
+_mangle_identifier_cache = {}
+
 
 # According the scheme, valid characters for mangled names are [a-zA-Z0-9_].
 # We borrow the '_' as the escape character to encode invalid char into
@@ -112,6 +114,12 @@ def mangle_identifier(ident, template_params='', *, abi_tags=(), uid=None):
 
     This treats '.' as '::' in C++.
     """
+    cache_key = (ident, template_params, abi_tags, uid)
+    try:
+        return _mangle_identifier_cache[cache_key]
+    except KeyError:
+        pass
+
     if uid is not None:
         # Add uid to abi-tags
         abi_tags = (f"v{uid}", *abi_tags)
@@ -119,9 +127,11 @@ def mangle_identifier(ident, template_params='', *, abi_tags=(), uid=None):
     enc_abi_tags = list(map(mangle_abi_tag, abi_tags))
     extras = template_params + ''.join(enc_abi_tags)
     if len(parts) > 1:
-        return 'N%s%sE' % (''.join(parts), extras)
+        result = 'N%s%sE' % (''.join(parts), extras)
     else:
-        return '%s%s' % (parts[0], extras)
+        result = '%s%s' % (parts[0], extras)
+    _mangle_identifier_cache[cache_key] = result
+    return result
 
 
 def mangle_type_or_value(typ):
