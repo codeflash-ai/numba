@@ -1,24 +1,27 @@
 """
 NRT specific optimizations
 """
+
 import re
 from collections import defaultdict, deque
 from llvmlite import binding as ll
 from numba.core import cgutils
 
-_regex_incref = re.compile(r'\s*(?:tail)?\s*call void @NRT_incref\((.*)\)')
-_regex_decref = re.compile(r'\s*(?:tail)?\s*call void @NRT_decref\((.*)\)')
+_regex_incref = re.compile(r"\s*(?:tail)?\s*call void @NRT_incref\((.*)\)")
+_regex_decref = re.compile(r"\s*(?:tail)?\s*call void @NRT_decref\((.*)\)")
 _regex_bb = re.compile(
-    r'|'.join([
-        # unnamed BB is just a plain number
-        r'[0-9]+:',
-        # with a proper identifier (see llvm langref)
-        r'[\'"]?[-a-zA-Z$._0-9][-a-zA-Z$._0-9]*[\'"]?:',
-        # is a start of a function definition
-        r'^define',
-        # no name
-        r'^;\s*<label>',
-    ])
+    r"|".join(
+        [
+            # unnamed BB is just a plain number
+            r"[0-9]+:",
+            # with a proper identifier (see llvm langref)
+            r'[\'"]?[-a-zA-Z$._0-9][-a-zA-Z$._0-9]*[\'"]?:',
+            # is a start of a function definition
+            r"^define",
+            # no name
+            r"^;\s*<label>",
+        ]
+    )
 )
 
 
@@ -26,14 +29,17 @@ def _remove_redundant_nrt_refct(llvmir):
     # Note: As soon as we have better utility in analyzing materialized LLVM
     #       module in llvmlite, we can redo this without so much string
     #       processing.
+
+    splitlines = str(llvmir).splitlines  # Avoid attribute lookup in loop
+
     def _extract_functions(module):
         cur = []
-        for line in str(module).splitlines():
-            if line.startswith('define'):
+        for line in splitlines():
+            if line.startswith("define"):
                 # start of function
                 assert not cur
                 cur.append(line)
-            elif line.startswith('}'):
+            elif line.startswith("}"):
                 # end of function
                 assert cur
                 cur.append(line)
@@ -49,24 +55,26 @@ def _remove_redundant_nrt_refct(llvmir):
         for is_bb, bb_lines in _extract_basic_blocks(func_lines):
             if is_bb and bb_lines:
                 bb_lines = _process_basic_block(bb_lines)
-            out += bb_lines
+            out.extend(bb_lines)
         return out
 
     def _extract_basic_blocks(func_lines):
-        assert func_lines[0].startswith('define')
-        assert func_lines[-1].startswith('}')
+        assert func_lines[0].startswith("define")
+        assert func_lines[-1].startswith("}")
         yield False, [func_lines[0]]
 
         cur = []
+        append_cur = cur.append
         for ln in func_lines[1:-1]:
             m = _regex_bb.match(ln)
             if m is not None:
                 # line is a basic block separator
                 yield True, cur
                 cur = []
+                append_cur = cur.append
                 yield False, [ln]
             elif ln:
-                cur.append(ln)
+                append_cur(ln)
 
         yield True, cur
         yield False, [func_lines[-1]]
@@ -77,13 +85,16 @@ def _remove_redundant_nrt_refct(llvmir):
         return bb_lines
 
     def _examine_refct_op(bb_lines):
-        for num, ln in enumerate(bb_lines):
-            m = _regex_incref.match(ln)
+        regex_incref = _regex_incref
+        regex_decref = _regex_decref
+        enumerate_bl = enumerate(bb_lines)
+        for num, ln in enumerate_bl:
+            m = regex_incref.match(ln)
             if m is not None:
                 yield num, m.group(1), None
                 continue
 
-            m = _regex_decref.match(ln)
+            m = regex_decref.match(ln)
             if m is not None:
                 yield num, None, m.group(1)
                 continue
@@ -97,12 +108,12 @@ def _remove_redundant_nrt_refct(llvmir):
         for num, incref_var, decref_var in _examine_refct_op(bb_lines):
             assert not (incref_var and decref_var)
             if incref_var:
-                if incref_var == 'i8* null':
+                if incref_var == "i8* null":
                     to_remove.add(num)
                 else:
                     incref_map[incref_var].append(num)
             elif decref_var:
-                if decref_var == 'i8* null':
+                if decref_var == "i8* null":
                     to_remove.add(num)
                 else:
                     decref_map[decref_var].append(num)
@@ -114,46 +125,56 @@ def _remove_redundant_nrt_refct(llvmir):
                 to_remove.add(incops.pop())
                 to_remove.add(decops.popleft())
 
-        return [ln for num, ln in enumerate(bb_lines)
-                if num not in to_remove]
+        # Use list comprehension only once to minimize work
+        if not to_remove:
+            return bb_lines
+        return [ln for num, ln in enumerate(bb_lines) if num not in to_remove]
 
     def _move_and_group_decref_after_all_increfs(bb_lines):
-        # find last incref
-        last_incref_pos = 0
-        for pos, ln in enumerate(bb_lines):
-            if _regex_incref.match(ln) is not None:
-                last_incref_pos = pos + 1
+        # find last incref (scan backward for first match, more efficient on dense blocks)
+        regex_incref = _regex_incref
+        regex_decref = _regex_decref
 
-        # find last decref
+        last_incref_pos = 0
+        for pos in range(len(bb_lines) - 1, -1, -1):
+            if regex_incref.match(bb_lines[pos]) is not None:
+                last_incref_pos = pos + 1
+                break
+
         last_decref_pos = 0
-        for pos, ln in enumerate(bb_lines):
-            if _regex_decref.match(ln) is not None:
+        for pos in range(len(bb_lines) - 1, -1, -1):
+            if regex_decref.match(bb_lines[pos]) is not None:
                 last_decref_pos = pos + 1
+                break
 
         last_pos = max(last_incref_pos, last_decref_pos)
+        if last_pos == 0:
+            return bb_lines  # nothing to move
 
-        # find decrefs before last_pos
         decrefs = []
         head = []
+        append_head = head.append
+        append_decref = decrefs.append
         for ln in bb_lines[:last_pos]:
-            if _regex_decref.match(ln) is not None:
-                decrefs.append(ln)
+            if regex_decref.match(ln) is not None:
+                append_decref(ln)
             else:
-                head.append(ln)
+                append_head(ln)
 
         # insert decrefs at last_pos
         return head + decrefs + bb_lines[last_pos:]
 
     # Driver
     processed = []
+    extend_processed = processed.extend
 
     for is_func, lines in _extract_functions(llvmir):
         if is_func:
             lines = _process_function(lines)
 
-        processed += lines
+        extend_processed(lines)
 
-    return '\n'.join(processed)
+    return "\n".join(processed)
 
 
 def remove_redundant_nrt_refct(ll_module):
@@ -169,7 +190,7 @@ def remove_redundant_nrt_refct(ll_module):
     """
     # Early escape if NRT_incref is not used
     try:
-        ll_module.get_function('NRT_incref')
+        ll_module.get_function("NRT_incref")
     except NameError:
         return ll_module
 
