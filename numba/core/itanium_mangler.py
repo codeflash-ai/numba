@@ -112,16 +112,36 @@ def mangle_identifier(ident, template_params='', *, abi_tags=(), uid=None):
 
     This treats '.' as '::' in C++.
     """
+    # Fast-path for no dots and no extras (most frequent case): single-part ident, no template_params, no abi_tags, no uid
+    if (
+        uid is None
+        and not template_params
+        and not abi_tags
+        and '.' not in ident
+    ):
+        # Avoid unnecessary allocations and splits, call lower-level optimized code directly
+        # This assumes ident contains only valid chars, otherwise _escape_string will still operate correctly
+        part = _len_encoded(_escape_string(ident))
+        return part
+
     if uid is not None:
         # Add uid to abi-tags
         abi_tags = (f"v{uid}", *abi_tags)
-    parts = [_len_encoded(_escape_string(x)) for x in ident.split('.')]
-    enc_abi_tags = list(map(mangle_abi_tag, abi_tags))
-    extras = template_params + ''.join(enc_abi_tags)
-    if len(parts) > 1:
-        return 'N%s%sE' % (''.join(parts), extras)
+
+    # Optimize splitting and mangling; combine _escape_string and _len_encoded in generator expression to avoid intermediate lists
+    split_ident = ident.split('.')
+    # Large performance win: avoid building a list, join directly on generator
+    parts_joined = ''.join(_len_encoded(_escape_string(x)) for x in split_ident)
+
+    # Optimize abi_tags encoding: join directly with generator, skip list materialization
+    enc_abi_tags = ''.join(mangle_abi_tag(tag) for tag in abi_tags)
+
+    extras = template_params + enc_abi_tags
+
+    if len(split_ident) > 1:
+        return f'N{parts_joined}{extras}E'
     else:
-        return '%s%s' % (parts[0], extras)
+        return f'{parts_joined}{extras}'
 
 
 def mangle_type_or_value(typ):
@@ -164,16 +184,20 @@ def mangle_args(argtys):
     """
     Mangle sequence of Numba type objects and arbitrary values.
     """
-    return ''.join([mangle_type_or_value(t) for t in argtys])
+    # Use generator instead of list for .join for efficiency (especially for long argtys)
+    return ''.join(mangle_type_or_value(t) for t in argtys)
 
 
 def mangle(ident, argtys, *, abi_tags=(), uid=None):
     """
     Mangle identifier with Numba type objects and abi-tags.
     """
-    return ''.join([PREFIX,
-                    mangle_identifier(ident, abi_tags=abi_tags, uid=uid),
-                    mangle_args(argtys)])
+    # Since PREFIX is constant and strings, use direct joining with concatenation for efficiency
+    return (
+        PREFIX +
+        mangle_identifier(ident, abi_tags=abi_tags, uid=uid) +
+        mangle_args(argtys)
+    )
 
 
 def prepend_namespace(mangled, ns):
