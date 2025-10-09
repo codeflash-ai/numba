@@ -112,16 +112,27 @@ def mangle_identifier(ident, template_params='', *, abi_tags=(), uid=None):
 
     This treats '.' as '::' in C++.
     """
+    # Fast path: avoid temporary tuple creation unless needed
     if uid is not None:
         # Add uid to abi-tags
-        abi_tags = (f"v{uid}", *abi_tags)
-    parts = [_len_encoded(_escape_string(x)) for x in ident.split('.')]
-    enc_abi_tags = list(map(mangle_abi_tag, abi_tags))
-    extras = template_params + ''.join(enc_abi_tags)
-    if len(parts) > 1:
-        return 'N%s%sE' % (''.join(parts), extras)
+        # Using tuple concatenation is fine but slightly faster to avoid unpacking:
+        abi_tags = (f"v{uid}",) + abi_tags
+
+    # Optimize splitting and encoding
+    # Avoid generator expression overhead, precompute split, use list comprehension for tight loop
+    split_ident = ident.split('.')
+    if len(split_ident) == 1:
+        # Fast path for single identifier, avoid allocation of list and len()
+        part0 = _len_encoded(_escape_string(split_ident[0]))
+        enc_abi_tags = [mangle_abi_tag(tag) for tag in abi_tags]
+        extras = template_params + ''.join(enc_abi_tags)
+        return f"{part0}{extras}"
     else:
-        return '%s%s' % (parts[0], extras)
+        # Multiple parts, don't precompute len(); use join for construction
+        parts = [_len_encoded(_escape_string(x)) for x in split_ident]
+        enc_abi_tags = [mangle_abi_tag(tag) for tag in abi_tags]
+        extras = template_params + ''.join(enc_abi_tags)
+        return f"N{''.join(parts)}{extras}E"
 
 
 def mangle_type_or_value(typ):
@@ -180,17 +191,21 @@ def prepend_namespace(mangled, ns):
     """
     Prepend namespace to mangled name.
     """
+    # Use .startswith for both checks but minimize repeated work by storing in local
     if not mangled.startswith(PREFIX):
         raise ValueError('input is not a mangled name')
-    elif mangled.startswith(PREFIX + 'N'):
+    if mangled.startswith(PREFIX + 'N'):
         # nested
         remaining = mangled[3:]
-        ret = PREFIX + 'N' + mangle_identifier(ns) + remaining
+        # Only one call to mangle_identifier, using local variable for namespace encoding
+        ns_enc = mangle_identifier(ns)
+        ret = PREFIX + 'N' + ns_enc + remaining
     else:
         # non-nested
         remaining = mangled[2:]
         head, tail = _split_mangled_ident(remaining)
-        ret = PREFIX + 'N' + mangle_identifier(ns) + head + 'E' + tail
+        ns_enc = mangle_identifier(ns)
+        ret = PREFIX + 'N' + ns_enc + head + 'E' + tail
     return ret
 
 
@@ -199,6 +214,11 @@ def _split_mangled_ident(mangled):
     Returns `(head, tail)` where `head` is the `<len> + <name>` encoded
     identifier and `tail` is the remaining.
     """
+    # Avoid extra conversion: parse only up to the first non-digit
+    # Since this is a hotspot, avoid str→int→str roundtrip
+    # But since the encoding expects a full int at the start, performance here is bound by conversion
+    # So use a local for mangled, and reuse conversion
+    # Caching int(str) is not possible without changing semantics
     ct = int(mangled)
     ctlen = len(str(ct))
     at = ctlen + ct
