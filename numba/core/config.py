@@ -5,6 +5,7 @@ import re
 import shutil
 import warnings
 import traceback
+from numba.core.errors import NumbaDeprecationWarning
 
 # YAML needed to use file based Numba config
 try:
@@ -15,6 +16,8 @@ except ImportError:
 
 
 import llvmlite.binding as ll
+
+_VALID_STYLES = {'new_style', 'old_style', 'default'}
 
 
 IS_WIN32 = sys.platform.startswith('win32')
@@ -79,21 +82,18 @@ _old_style_deprecation_msg = (
 
 # Choose how to handle captured errors
 def _validate_captured_errors_style(style_str):
-    # to prevent circular import
-    from numba.core.errors import NumbaDeprecationWarning
-
+    # str conversion is fast, keep as is
     rendered_style = str(style_str)
-    if rendered_style not in ('new_style', 'old_style', 'default'):
+    if rendered_style not in _VALID_STYLES:
         msg = ("Invalid style in NUMBA_CAPTURED_ERRORS: "
                f"{rendered_style}")
         raise ValueError(msg)
-    else:
-        if rendered_style == 'default':
-            rendered_style = 'new_style'
-        elif rendered_style == 'old_style':
-            warnings.warn(_old_style_deprecation_msg,
-                          NumbaDeprecationWarning)
-        return rendered_style
+    if rendered_style == 'default':
+        rendered_style = 'new_style'
+    elif rendered_style == 'old_style':
+        warnings.warn(_old_style_deprecation_msg,
+                      NumbaDeprecationWarning)
+    return rendered_style
 
 
 class _OptLevel(int):
