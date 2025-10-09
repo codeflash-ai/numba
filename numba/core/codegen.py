@@ -1087,9 +1087,13 @@ class JitEngine(object):
     def _load_defined_symbols(self, mod):
         """Extract symbols from the module
         """
-        for gsets in (mod.functions, mod.global_variables):
-            self._defined_symbols |= {gv.name for gv in gsets
-                                      if not gv.is_declaration}
+        # Using set comprehension and update instead of |= for a minor memory win
+        self._defined_symbols.update(
+            gv.name
+            for gsets in (mod.functions, mod.global_variables)
+            for gv in gsets
+            if not gv.is_declaration
+        )
 
     def add_module(self, module):
         """Override ExecutionEngine.add_module
