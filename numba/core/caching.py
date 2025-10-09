@@ -267,6 +267,8 @@ class _IPythonCacheLocator(_CacheLocator):
             self._bytes_source = source
         else:
             self._bytes_source = source.encode('utf-8')
+        firstlines = b''.join(self._bytes_source.splitlines(True)[:2])
+        self._disambig_hash = hashlib.sha256(firstlines).hexdigest()[:10]
 
     def get_cache_path(self):
         # We could also use jupyter_core.paths.jupyter_runtime_dir()
@@ -289,8 +291,7 @@ class _IPythonCacheLocator(_CacheLocator):
         # for the cache, so we hash the first two lines of the function
         # source (usually this will be the @jit decorator + the function
         # signature).
-        firstlines = b''.join(self._bytes_source.splitlines(True)[:2])
-        return hashlib.sha256(firstlines).hexdigest()[:10]
+        return self._disambig_hash
 
     @classmethod
     def from_function(cls, py_func, py_file):
