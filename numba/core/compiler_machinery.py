@@ -226,22 +226,26 @@ class PassManager(object):
 
     def _debug_init(self):
         # determine after which passes IR dumps should take place
+
+        # Cache pass names if needed for efficiency
+        pass_names = None
+        # Only compute this once to avoid recomputing on multiple "all" triggers
         def parse(conf_item):
-            print_passes = []
-            if conf_item != "none":
-                if conf_item == "all":
-                    print_passes = [x.name() for (x, _) in self.passes]
-                else:
-                    # we don't validate whether the named passes exist in this
-                    # pipeline the compiler may be used reentrantly and
-                    # different pipelines may contain different passes
-                    splitted = conf_item.split(',')
-                    print_passes = [x.strip() for x in splitted]
-            return print_passes
-        ret = (parse(config.DEBUG_PRINT_AFTER),
-               parse(config.DEBUG_PRINT_BEFORE),
-               parse(config.DEBUG_PRINT_WRAP),)
-        return ret
+            nonlocal pass_names
+            if conf_item == "none":
+                return []
+            if conf_item == "all":
+                # Compute pass_names once and cache for repeated "all"
+                if pass_names is None:
+                    pass_names = [x.name() for (x, _) in self.passes]
+                return pass_names
+            # for other cases, only split and strip
+            return [x.strip() for x in conf_item.split(',')]
+        return (
+            parse(config.DEBUG_PRINT_AFTER),
+            parse(config.DEBUG_PRINT_BEFORE),
+            parse(config.DEBUG_PRINT_WRAP),
+        )
 
     def finalize(self):
         """
