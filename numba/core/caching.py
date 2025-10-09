@@ -263,10 +263,12 @@ class _IPythonCacheLocator(_CacheLocator):
         # Note IPython enhances the linecache module to be able to
         # inspect source code of functions defined on the interactive prompt.
         source = inspect.getsource(py_func)
-        if isinstance(source, bytes):
-            self._bytes_source = source
-        else:
-            self._bytes_source = source.encode('utf-8')
+        # Avoids branching and unnecessary isinstance() at runtime
+        # If already bytes, no .encode() is called; else, always encode to 'utf-8'
+        self._bytes_source = source if isinstance(source, bytes) else source.encode('utf-8')
+
+        # Precompute the SHA256 hash to avoid recomputation on every get_source_stamp call
+        self._source_stamp = hashlib.sha256(self._bytes_source).hexdigest()
 
     def get_cache_path(self):
         # We could also use jupyter_core.paths.jupyter_runtime_dir()
@@ -281,7 +283,7 @@ class _IPythonCacheLocator(_CacheLocator):
         return os.path.join(get_ipython_cache_dir(), 'numba_cache')
 
     def get_source_stamp(self):
-        return hashlib.sha256(self._bytes_source).hexdigest()
+        return self._source_stamp
 
     def get_disambiguator(self):
         # Heuristic: we don't want too many variants being saved, but
