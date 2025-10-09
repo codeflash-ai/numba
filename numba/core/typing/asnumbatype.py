@@ -28,7 +28,6 @@ class AsNumbaTypeRegistry:
                 None,
             ]
         }
-
         self.functions = [self._builtin_infer, self._numba_type_infer]
 
     def _numba_type_infer(self, py_type):
@@ -36,40 +35,55 @@ class AsNumbaTypeRegistry:
             return py_type
 
     def _builtin_infer(self, py_type):
+        # Cache __origin__ to avoid multiple getattr calls
+        origin = getattr(py_type, "__origin__", None)
+        # Only check _GenericAlias once
         if not isinstance(py_type, py_typing._GenericAlias):
             return
 
-        if getattr(py_type, "__origin__", None) is py_typing.Union:
-            if len(py_type.__args__) != 2:
-                raise errors.TypingError(
-                    "Cannot type Union of more than two types")
-
-            (arg_1_py, arg_2_py) = py_type.__args__
-
-            if arg_2_py is type(None): # noqa: E721
-                return types.Optional(self.infer(arg_1_py))
-            elif arg_1_py is type(None): # noqa: E721
-                return types.Optional(self.infer(arg_2_py))
+        # Handle Union
+        if origin is py_typing.Union:
+            args = py_type.__args__
+            if len(args) != 2:
+                raise errors.TypingError("Cannot type Union of more than two types")
+            arg_1_py, arg_2_py = args
+            if arg_2_py is type(None):  # noqa: E721
+                t = self.infer(arg_1_py)
+                return types.Optional(t)
+            elif arg_1_py is type(None):  # noqa: E721
+                t = self.infer(arg_2_py)
+                return types.Optional(t)
             else:
                 raise errors.TypingError(
                     "Cannot type Union that is not an Optional "
-                    f"(neither type type {arg_2_py} is not NoneType")
+                    f"(neither type type {arg_2_py} is not NoneType"
+                )
 
-        if getattr(py_type, "__origin__", None) is list:
+        # Handle list
+        if origin is list:
             (element_py,) = py_type.__args__
-            return types.ListType(self.infer(element_py))
+            elem_type = self.infer(element_py)
+            return types.ListType(elem_type)
 
-        if getattr(py_type, "__origin__", None) is dict:
+        # Handle dict
+        if origin is dict:
             key_py, value_py = py_type.__args__
-            return types.DictType(self.infer(key_py), self.infer(value_py))
+            key_type = self.infer(key_py)
+            value_type = self.infer(value_py)
+            return types.DictType(key_type, value_type)
 
-        if getattr(py_type, "__origin__", None) is set:
+        # Handle set
+        if origin is set:
             (element_py,) = py_type.__args__
-            return types.Set(self.infer(element_py))
+            elem_type = self.infer(element_py)
+            return types.Set(elem_type)
 
-        if getattr(py_type, "__origin__", None) is tuple:
-            tys = tuple(map(self.infer, py_type.__args__))
-            return types.BaseTuple.from_types(tys)
+        # Handle tuple
+        if origin is tuple:
+            # Use list comprehension for slight speedup (avoid overhead of map)
+            args = py_type.__args__
+            tys = [self.infer(arg) for arg in args]
+            return types.BaseTuple.from_types(tuple(tys))
 
     def register(self, func_or_py_type, numba_type=None):
         """
@@ -110,6 +124,10 @@ class AsNumbaTypeRegistry:
         return result
 
     def infer(self, py_type):
+        # Fast-path: lookup table direct hit
+        res = self.lookup.get(py_type)
+        if res is not None:
+            return res
         result = self.try_infer(py_type)
         if result is None:
             raise errors.TypingError(
