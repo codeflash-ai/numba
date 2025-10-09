@@ -71,10 +71,19 @@ def _escape_string(text):
     hex format.
     """
 
-    def repl(m):
-        return ''.join(('_%02x' % ch)
-                       for ch in m.group(0).encode('utf8'))
-    ret = re.sub(_re_invalid_char, repl, text)
+    # Precompile lookup table for fast ascii-range check and replacement
+    # Valid: [a-zA-Z0-9_], invalid: everything else
+    valid_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+    # Avoid regex
+    escaped = []
+    append = escaped.append
+    for ch in text:
+        if ch in valid_chars:
+            append(ch)
+        else:
+            for b in ch.encode('utf8'):
+                append('_%02x' % b)
+    ret = ''.join(escaped)
     # Return str if we got a unicode (for py2)
     if not isinstance(ret, str):
         return ret.encode('ascii')
