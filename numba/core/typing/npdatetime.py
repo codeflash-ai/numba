@@ -284,11 +284,14 @@ class DatetimeMinMax(AbstractTemplate):
         assert not kws
         assert len(args) == 2
         error_msg = "DatetimeMinMax requires both arguments to be NPDatetime type or both arguments to be NPTimedelta types"
-        assert isinstance(args[0], (types.NPDatetime, types.NPTimedelta)), error_msg
-        if isinstance(args[0], types.NPDatetime):
-            if not isinstance(args[1], types.NPDatetime):
+        arg0_type = type(args[0])
+        
+        if arg0_type is types.NPDatetime:
+            if type(args[1]) is not types.NPDatetime:
+                raise TypeError(error_msg)
+        elif arg0_type is types.NPTimedelta:
+            if type(args[1]) is not types.NPTimedelta:
                 raise TypeError(error_msg)
         else:
-            if not isinstance(args[1], types.NPTimedelta):
-                raise TypeError(error_msg)
+            assert isinstance(args[0], (types.NPDatetime, types.NPTimedelta)), error_msg
         return signature(args[0], *args)
