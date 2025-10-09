@@ -296,13 +296,12 @@ class _CCExtension(Extension):
 
         _orig_build_ext = build_ext.build_ext
 
-        class _CC_build_ext(_orig_build_ext):
+        def _build_extension(self, ext):
+            if isinstance(ext, _CCExtension):
+                ext._prepare_object_files(self)
+            _orig_build_ext.build_extension(self, ext)
 
-            def build_extension(self, ext):
-                if isinstance(ext, _CCExtension):
-                    ext._prepare_object_files(self)
-
-                _orig_build_ext.build_extension(self, ext)
+        _CC_build_ext = type("_CC_build_ext", (_orig_build_ext,), {"build_extension": _build_extension})
 
         build_ext.build_ext = _CC_build_ext
 
