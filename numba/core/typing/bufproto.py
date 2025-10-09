@@ -62,6 +62,9 @@ def infer_layout(val):
     """
     Infer layout of the given memoryview *val*.
     """
-    return ('C' if val.c_contiguous else
-            'F' if val.f_contiguous else
-            'A')
+    # Short-circuit evaluation by direct attribute access
+    if val.c_contiguous:
+        return 'C'
+    if val.f_contiguous:
+        return 'F'
+    return 'A'
