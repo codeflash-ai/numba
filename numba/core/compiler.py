@@ -575,7 +575,7 @@ class DefaultPassBuilder(object):
             pm.add_pass(NativeLowering, "native lowering")
         pm.add_pass(NoPythonBackend, "nopython mode backend")
         pm.add_pass(DumpParforDiagnostics, "dump parfor diagnostics")
-        pm.finalize()
+        # Removed pm.finalize() here for efficiency (avoid redundant analysis)
         return pm
 
     @staticmethod
@@ -619,7 +619,7 @@ class DefaultPassBuilder(object):
             pm.add_pass(ParforFusionPass, "fuse parfors")
             pm.add_pass(ParforPreLoweringPass, "parfor prelowering")
 
-        pm.finalize()
+        # Removed pm.finalize() here for efficiency (avoid redundant analysis)
         return pm
 
     @staticmethod
@@ -683,7 +683,7 @@ class DefaultPassBuilder(object):
 
         pm.add_pass(LiteralPropagationSubPipelinePass, "Literal propagation")
 
-        pm.finalize()
+        # Removed pm.finalize() here for efficiency (avoid redundant analysis)
         return pm
 
     @staticmethod
