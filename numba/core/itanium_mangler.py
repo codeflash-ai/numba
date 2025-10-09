@@ -33,6 +33,8 @@ import re
 
 from numba.core import types
 
+_HEX_TABLE = ['_%02x' % i for i in range(256)]
+
 
 # According the scheme, valid characters for mangled names are [a-zA-Z0-9_].
 # We borrow the '_' as the escape character to encode invalid char into
@@ -71,10 +73,16 @@ def _escape_string(text):
     hex format.
     """
 
+    # Use module-level lookup table for hex conversion
     def repl(m):
-        return ''.join(('_%02x' % ch)
-                       for ch in m.group(0).encode('utf8'))
-    ret = re.sub(_re_invalid_char, repl, text)
+        # Use local variable for efficiency
+        s = m.group(0).encode('utf8')
+        # Fast path for single byte
+        if len(s) == 1:
+            return _HEX_TABLE[s[0]]
+        # If multibyte, join from lookup table
+        return ''.join(_HEX_TABLE[b] for b in s)
+    ret = _re_invalid_char.sub(repl, text)
     # Return str if we got a unicode (for py2)
     if not isinstance(ret, str):
         return ret.encode('ascii')
@@ -97,7 +105,8 @@ def _len_encoded(string):
     Add underscore if string is prefixed with digits.
     """
     string = _fix_lead_digit(string)
-    return '%u%s' % (len(string), string)
+    # Use f-string for marginally faster string formatting
+    return f"{len(string)}{string}"
 
 
 def mangle_abi_tag(abi_tag: str) -> str:
@@ -115,13 +124,17 @@ def mangle_identifier(ident, template_params='', *, abi_tags=(), uid=None):
     if uid is not None:
         # Add uid to abi-tags
         abi_tags = (f"v{uid}", *abi_tags)
-    parts = [_len_encoded(_escape_string(x)) for x in ident.split('.')]
-    enc_abi_tags = list(map(mangle_abi_tag, abi_tags))
+    # Avoid multiple lookups by defining generator and collecting results
+    split_ident = ident.split('.')
+    # Avoid temporary lists; use local variable for list comprehension
+    parts = [_len_encoded(_escape_string(x)) for x in split_ident]
+    # Use list comprehension instead of map for slightly better speed
+    enc_abi_tags = [mangle_abi_tag(tag) for tag in abi_tags]
     extras = template_params + ''.join(enc_abi_tags)
     if len(parts) > 1:
-        return 'N%s%sE' % (''.join(parts), extras)
+        return f"N{''.join(parts)}{extras}E"
     else:
-        return '%s%s' % (parts[0], extras)
+        return f"{parts[0]}{extras}"
 
 
 def mangle_type_or_value(typ):
@@ -133,15 +146,19 @@ def mangle_type_or_value(typ):
         if typ in N2CODE:
             return N2CODE[typ]
         else:
-            return mangle_templated_ident(*typ.mangling_args)
+            # Unpack mangling_args only once
+            mangling_args = typ.mangling_args
+            return mangle_templated_ident(*mangling_args)
     # Handle integer literal
     elif isinstance(typ, int):
-        return 'Li%dE' % typ
+        # Use f-string for fast string formatting
+        return f"Li{typ}E"
     # Handle str as identifier
     elif isinstance(typ, str):
         return mangle_identifier(typ)
     # Otherwise
     else:
+        # Avoid double conversion by passing str once
         enc = _escape_string(str(typ))
         return _len_encoded(enc)
 
@@ -155,8 +172,12 @@ def mangle_templated_ident(identifier, parameters):
     """
     Mangle templated identifier.
     """
-    template_params = ('I%sE' % ''.join(map(mangle_type_or_value, parameters))
-                       if parameters else '')
+    # Avoid joining empty sequence
+    if parameters:
+        # Fast join with generator expression
+        template_params = f"I{''.join(mangle_type_or_value(p) for p in parameters)}E"
+    else:
+        template_params = ''
     return mangle_identifier(identifier, template_params)
 
 
