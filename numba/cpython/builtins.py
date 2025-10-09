@@ -502,11 +502,9 @@ def lower_get_type_min_value(context, builder, sig, args):
             lty = ir.DoubleType()
         else:
             raise NotImplementedError("llvmlite only supports 32 and 64 bit floats")
-        npty = getattr(np, 'float{}'.format(bw))
         res = ir.Constant(lty, -np.inf)
     elif isinstance(typ, (types.NPDatetime, types.NPTimedelta)):
-        bw = 64
-        lty = ir.IntType(bw)
+        lty = ir.IntType(64)
         val = types.int64.minval + 1 # minval is NaT, so minval + 1 is the smallest value
         res = ir.Constant(lty, val)
     return impl_ret_untracked(context, builder, lty, res)
