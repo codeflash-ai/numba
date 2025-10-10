@@ -140,10 +140,11 @@ def _fix_up_private_attr(clsname, spec):
     """
     Apply the same changes to dunder names as CPython would.
     """
+    clsname_pref = f"_{clsname}"
     out = OrderedDict()
     for k, v in spec.items():
         if k.startswith('__') and not k.endswith('__'):
-            k = '_' + clsname + k
+            k = clsname_pref + k
         out[k] = v
     return out
 
