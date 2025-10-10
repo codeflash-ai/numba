@@ -121,6 +121,8 @@ class Target(ABC):
     @classmethod
     def inherits_from(cls, other):
         """Returns True if this target inherits from 'other' False otherwise"""
+        if cls is other:
+            return True
         return issubclass(cls, other)
 
 
