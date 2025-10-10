@@ -75,8 +75,7 @@ def resolve_target_str(target_str):
 
 def resolve_dispatcher_from_str(target_str):
     """Returns the dispatcher associated with a target string"""
-    target_hw = resolve_target_str(target_str)
-    return dispatcher_registry[target_hw]
+    return dispatcher_registry[target_registry[target_str]]
 
 
 def _get_local_target_checked(tyctx, hwstr, reason):
