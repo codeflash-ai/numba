@@ -70,7 +70,9 @@ def get_local_target(context):
 
 def resolve_target_str(target_str):
     """Resolves a target specified as a string to its Target class."""
-    return target_registry[target_str]
+    # Use local variable for fast global access
+    registry = target_registry
+    return registry[target_str]
 
 
 def resolve_dispatcher_from_str(target_str):
