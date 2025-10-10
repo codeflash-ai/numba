@@ -68,10 +68,12 @@ def _getargs(fn_sig):
     Returns list of positional and keyword argument names in order.
     """
     params = fn_sig.parameters
+    POSITIONAL_OR_KEYWORD = next(iter(params.values())).POSITIONAL_OR_KEYWORD if params else 1
     args = []
+    append = args.append  # Local binding for performance
     for k, v in params.items():
-        if (v.kind & v.POSITIONAL_OR_KEYWORD) == v.POSITIONAL_OR_KEYWORD:
-            args.append(k)
+        if (v.kind & POSITIONAL_OR_KEYWORD) == POSITIONAL_OR_KEYWORD:
+            append(k)
         else:
             msg = "%s argument type unsupported in jitclass" % v.kind
             raise errors.UnsupportedError(msg)
