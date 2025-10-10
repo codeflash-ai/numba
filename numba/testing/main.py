@@ -20,6 +20,18 @@ from datetime import datetime
 
 from .loader import TestLoader
 
+_ansi_escape = re.compile(r'''
+    \x1B  # ESC
+    (?:   #  7-bit C1 Fe (except CSI)
+        [@-Z\\-_]
+    |     # or [ for CSI, followed by a control sequence
+        \[
+        [0-?]*  # Parameter bytes
+        [ -/]*  # Intermediate bytes
+        [@-~]   # Final byte
+    )
+''', re.VERBOSE)
+
 try:
     from multiprocessing import TimeoutError
 except ImportError:
@@ -707,18 +719,7 @@ def _strip_ansi_escape_sequences(text):
     """
     Adapting from https://stackoverflow.com/a/14693789
     """
-    ansi_escape = re.compile(r'''
-        \x1B  # ESC
-        (?:   #  7-bit C1 Fe (except CSI)
-            [@-Z\\-_]
-        |     # or [ for CSI, followed by a control sequence
-            \[
-            [0-?]*  # Parameter bytes
-            [ -/]*  # Intermediate bytes
-            [@-~]   # Final byte
-        )
-    ''', re.VERBOSE)
-    return ansi_escape.sub('', text)
+    return _ansi_escape.sub('', text)
 
 
 class _MinimalResult(object):
