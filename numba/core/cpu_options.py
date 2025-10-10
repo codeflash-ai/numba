@@ -112,7 +112,10 @@ class ParallelOptions(AbstractOptionValue):
     def _get_values(self):
         """Get values as dictionary.
         """
-        return {k: getattr(self, k) for k in self.__slots__}
+        return {"enabled": self.enabled, "comprehension": self.comprehension,
+                "reduction": self.reduction, "inplace_binop": self.inplace_binop,
+                "setitem": self.setitem, "numpy": self.numpy,
+                "stencil": self.stencil, "fusion": self.fusion, "prange": self.prange}
 
     def __eq__(self, other):
         if type(other) is type(self):
