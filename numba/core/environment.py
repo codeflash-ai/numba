@@ -2,6 +2,7 @@ import weakref
 import importlib
 
 from numba import _dynfunc
+import sys
 
 
 class Environment(_dynfunc.Environment):
@@ -9,7 +10,8 @@ class Environment(_dynfunc.Environment):
 
     It is often needed to convert b/w nopython objects and pyobjects.
     """
-    __slots__ = ('env_name', '__weakref__')
+
+    __slots__ = ("env_name", "__weakref__")
     # A weak-value dictionary to store live environment with env_name as the
     # key.
     _memo = weakref.WeakValueDictionary()
@@ -26,12 +28,12 @@ class Environment(_dynfunc.Environment):
             return inst
 
     def can_cache(self):
-        is_dyn = '__name__' not in self.globals
+        is_dyn = "__name__" not in self.globals
         return not is_dyn
 
     def __reduce__(self):
         return _rebuild_env, (
-            self.globals.get('__name__'),
+            self.globals.get("__name__"),
             self.consts,
             self.env_name,
         )
@@ -44,11 +46,14 @@ class Environment(_dynfunc.Environment):
 
 
 def _rebuild_env(modname, consts, env_name):
-    env = lookup_environment(env_name)
+    env = Environment._memo.get(env_name)
     if env is not None:
         return env
 
-    mod = importlib.import_module(modname)
+    mod = sys.modules.get(modname)
+    if mod is None:
+        mod = importlib.import_module(modname)
+
     env = Environment(mod.__dict__)
     env.consts[:] = consts
     env.env_name = env_name
