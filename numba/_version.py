@@ -1,4 +1,3 @@
-
 # This file helps to compute a version number in source trees obtained from
 # git-archive tarball (such as those provided by githubs download-from-tag
 # feature). Distribution tarballs (built by setup.py sdist) and build
@@ -378,18 +377,23 @@ def render_pep440(pieces):
     Exceptions:
     1: no tags. git_describe was just HEX. 0+untagged.DISTANCE.gHEX[.dirty]
     """
-    if pieces["closest-tag"]:
-        rendered = pieces["closest-tag"]
-        if pieces["distance"] or pieces["dirty"]:
-            rendered += plus_or_dot(pieces)
-            rendered += "%d.g%s" % (pieces["distance"], pieces["short"])
-            if pieces["dirty"]:
+    closest_tag = pieces["closest-tag"]
+    distance = pieces["distance"]
+    short = pieces["short"]
+    dirty = pieces["dirty"]
+
+    if closest_tag:
+        rendered = closest_tag
+        if distance or dirty:
+            # Inline plus_or_dot for efficiency (one 'in' check vs. function call)
+            rendered += "." if "+" in closest_tag else "+"
+            rendered += "%d.g%s" % (distance, short)
+            if dirty:
                 rendered += ".dirty"
     else:
         # exception #1
-        rendered = "0+untagged.%d.g%s" % (pieces["distance"],
-                                          pieces["short"])
-        if pieces["dirty"]:
+        rendered = "0+untagged.%d.g%s" % (distance, short)
+        if dirty:
             rendered += ".dirty"
     return rendered
 
@@ -403,23 +407,29 @@ def render_pep440_branch(pieces):
     Exceptions:
     1: no tags. 0[.dev0]+untagged.DISTANCE.gHEX[.dirty]
     """
-    if pieces["closest-tag"]:
-        rendered = pieces["closest-tag"]
-        if pieces["distance"] or pieces["dirty"]:
-            if pieces["branch"] != "master":
+    closest_tag = pieces["closest-tag"]
+    distance = pieces["distance"]
+    short = pieces["short"]
+    dirty = pieces["dirty"]
+    branch = pieces["branch"]
+
+    if closest_tag:
+        rendered = closest_tag
+        if distance or dirty:
+            if branch != "master":
                 rendered += ".dev0"
-            rendered += plus_or_dot(pieces)
-            rendered += "%d.g%s" % (pieces["distance"], pieces["short"])
-            if pieces["dirty"]:
+            # Inline plus_or_dot for efficiency
+            rendered += "." if "+" in closest_tag else "+"
+            rendered += "%d.g%s" % (distance, short)
+            if dirty:
                 rendered += ".dirty"
     else:
         # exception #1
         rendered = "0"
-        if pieces["branch"] != "master":
+        if branch != "master":
             rendered += ".dev0"
-        rendered += "+untagged.%d.g%s" % (pieces["distance"],
-                                          pieces["short"])
-        if pieces["dirty"]:
+        rendered += "+untagged.%d.g%s" % (distance, short)
+        if dirty:
             rendered += ".dirty"
     return rendered
 
@@ -440,21 +450,24 @@ def render_pep440_pre(pieces):
     Exceptions:
     1: no tags. 0.post0.devDISTANCE
     """
-    if pieces["closest-tag"]:
-        if pieces["distance"]:
-            # update the post release segment
-            tag_version, post_version = pep440_split_post(pieces["closest-tag"])
+    closest_tag = pieces["closest-tag"]
+    distance = pieces["distance"]
+
+    if closest_tag:
+        if distance:
+            # pep440_split_post is not hot in profiling, keep as is
+            tag_version, post_version = pep440_split_post(closest_tag)
             rendered = tag_version
             if post_version is not None:
-                rendered += ".post%d.dev%d" % (post_version + 1, pieces["distance"])
+                rendered += ".post%d.dev%d" % (post_version + 1, distance)
             else:
-                rendered += ".post0.dev%d" % (pieces["distance"])
+                rendered += ".post0.dev%d" % (distance)
         else:
             # no commits, use the tag as the version
-            rendered = pieces["closest-tag"]
+            rendered = closest_tag
     else:
         # exception #1
-        rendered = "0.post0.dev%d" % pieces["distance"]
+        rendered = "0.post0.dev%d" % distance
     return rendered
 
 
@@ -468,20 +481,25 @@ def render_pep440_post(pieces):
     Exceptions:
     1: no tags. 0.postDISTANCE[.dev0]
     """
-    if pieces["closest-tag"]:
-        rendered = pieces["closest-tag"]
-        if pieces["distance"] or pieces["dirty"]:
-            rendered += ".post%d" % pieces["distance"]
-            if pieces["dirty"]:
+    closest_tag = pieces["closest-tag"]
+    distance = pieces["distance"]
+    short = pieces["short"]
+    dirty = pieces["dirty"]
+
+    if closest_tag:
+        rendered = closest_tag
+        if distance or dirty:
+            rendered += ".post%d" % distance
+            if dirty:
                 rendered += ".dev0"
-            rendered += plus_or_dot(pieces)
-            rendered += "g%s" % pieces["short"]
+            rendered += "." if "+" in closest_tag else "+"
+            rendered += "g%s" % short
     else:
         # exception #1
-        rendered = "0.post%d" % pieces["distance"]
-        if pieces["dirty"]:
+        rendered = "0.post%d" % distance
+        if dirty:
             rendered += ".dev0"
-        rendered += "+g%s" % pieces["short"]
+        rendered += "+g%s" % short
     return rendered
 
 
@@ -493,23 +511,29 @@ def render_pep440_post_branch(pieces):
     Exceptions:
     1: no tags. 0.postDISTANCE[.dev0]+gHEX[.dirty]
     """
-    if pieces["closest-tag"]:
-        rendered = pieces["closest-tag"]
-        if pieces["distance"] or pieces["dirty"]:
-            rendered += ".post%d" % pieces["distance"]
-            if pieces["branch"] != "master":
+    closest_tag = pieces["closest-tag"]
+    distance = pieces["distance"]
+    short = pieces["short"]
+    dirty = pieces["dirty"]
+    branch = pieces["branch"]
+
+    if closest_tag:
+        rendered = closest_tag
+        if distance or dirty:
+            rendered += ".post%d" % distance
+            if branch != "master":
                 rendered += ".dev0"
-            rendered += plus_or_dot(pieces)
-            rendered += "g%s" % pieces["short"]
-            if pieces["dirty"]:
+            rendered += "." if "+" in closest_tag else "+"
+            rendered += "g%s" % short
+            if dirty:
                 rendered += ".dirty"
     else:
         # exception #1
-        rendered = "0.post%d" % pieces["distance"]
-        if pieces["branch"] != "master":
+        rendered = "0.post%d" % distance
+        if branch != "master":
             rendered += ".dev0"
-        rendered += "+g%s" % pieces["short"]
-        if pieces["dirty"]:
+        rendered += "+g%s" % short
+        if dirty:
             rendered += ".dirty"
     return rendered
 
@@ -522,16 +546,20 @@ def render_pep440_old(pieces):
     Exceptions:
     1: no tags. 0.postDISTANCE[.dev0]
     """
-    if pieces["closest-tag"]:
-        rendered = pieces["closest-tag"]
-        if pieces["distance"] or pieces["dirty"]:
-            rendered += ".post%d" % pieces["distance"]
-            if pieces["dirty"]:
+    closest_tag = pieces["closest-tag"]
+    distance = pieces["distance"]
+    dirty = pieces["dirty"]
+
+    if closest_tag:
+        rendered = closest_tag
+        if distance or dirty:
+            rendered += ".post%d" % distance
+            if dirty:
                 rendered += ".dev0"
     else:
         # exception #1
-        rendered = "0.post%d" % pieces["distance"]
-        if pieces["dirty"]:
+        rendered = "0.post%d" % distance
+        if dirty:
             rendered += ".dev0"
     return rendered
 
@@ -544,14 +572,19 @@ def render_git_describe(pieces):
     Exceptions:
     1: no tags. HEX[-dirty]  (note: no 'g' prefix)
     """
-    if pieces["closest-tag"]:
-        rendered = pieces["closest-tag"]
-        if pieces["distance"]:
-            rendered += "-%d-g%s" % (pieces["distance"], pieces["short"])
+    closest_tag = pieces["closest-tag"]
+    distance = pieces["distance"]
+    short = pieces["short"]
+    dirty = pieces["dirty"]
+
+    if closest_tag:
+        rendered = closest_tag
+        if distance:
+            rendered += "-%d-g%s" % (distance, short)
     else:
         # exception #1
-        rendered = pieces["short"]
-    if pieces["dirty"]:
+        rendered = short
+    if dirty:
         rendered += "-dirty"
     return rendered
 
@@ -565,26 +598,33 @@ def render_git_describe_long(pieces):
     Exceptions:
     1: no tags. HEX[-dirty]  (note: no 'g' prefix)
     """
-    if pieces["closest-tag"]:
-        rendered = pieces["closest-tag"]
-        rendered += "-%d-g%s" % (pieces["distance"], pieces["short"])
+    closest_tag = pieces["closest-tag"]
+    distance = pieces["distance"]
+    short = pieces["short"]
+    dirty = pieces["dirty"]
+
+    if closest_tag:
+        rendered = closest_tag
+        rendered += "-%d-g%s" % (distance, short)
     else:
         # exception #1
-        rendered = pieces["short"]
-    if pieces["dirty"]:
+        rendered = short
+    if dirty:
         rendered += "-dirty"
     return rendered
 
 
 def render(pieces, style):
     """Render the given version pieces into the requested style."""
-    if pieces["error"]:
+    error = pieces["error"]
+    if error:
         return {"version": "unknown",
                 "full-revisionid": pieces.get("long"),
                 "dirty": None,
-                "error": pieces["error"],
+                "error": error,
                 "date": None}
 
+    # Micro-opt: Use local vars for lookups in performance hot paths
     if not style or style == "default":
         style = "pep440"  # the default
 
@@ -607,9 +647,17 @@ def render(pieces, style):
     else:
         raise ValueError("unknown style '%s'" % style)
 
-    return {"version": rendered, "full-revisionid": pieces["long"],
-            "dirty": pieces["dirty"], "error": None,
-            "date": pieces.get("date")}
+    # Use local variables for hot lookup pieces
+    full_revisionid = pieces["long"]
+    dirty = pieces["dirty"]
+    date = pieces.get("date")
+    return {
+        "version": rendered,
+        "full-revisionid": full_revisionid,
+        "dirty": dirty,
+        "error": None,
+        "date": date
+    }
 
 
 def get_versions():
