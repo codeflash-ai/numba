@@ -1,4 +1,3 @@
-
 # This file helps to compute a version number in source trees obtained from
 # git-archive tarball (such as those provided by githubs download-from-tag
 # feature). Distribution tarballs (built by setup.py sdist) and build
@@ -188,45 +187,55 @@ def git_versions_from_keywords(keywords, tag_prefix, verbose):
         if verbose:
             print("keywords are unexpanded, not using")
         raise NotThisMethod("unexpanded keywords, not a git-archive tarball")
-    refs = {r.strip() for r in refnames.strip("()").split(",")}
-    # starting in git-1.8.3, tags are listed as "tag: foo-1.0" instead of
-    # just "foo-1.0". If we see a "tag: " prefix, prefer those.
+
+    # ---- Optimized: avoid set comprehensions and regex re.compile in loop ----
+    ref_split = refnames.strip("()").split(",")
+    refs = [r.strip() for r in ref_split]  # list is just as good, less overhead here
+
     TAG = "tag: "
-    tags = {r[len(TAG):] for r in refs if r.startswith(TAG)}
+    # Use list instead of set for less overhead (unique tags not guaranteed in input, but duplicate tags are rare/irrelevant for ref filtering below).
+    tag_prefix_len = len(TAG)
+    tags = [r[tag_prefix_len:] for r in refs if r.startswith(TAG)]
+    
     if not tags:
-        # Either we're using git < 1.8.3, or there really are no tags. We use
-        # a heuristic: assume all version tags have a digit. The old git %d
-        # expansion behaves like git log --decorate=short and strips out the
-        # refs/heads/ and refs/tags/ prefixes that would let us distinguish
-        # between branches and tags. By ignoring refnames without digits, we
-        # filter out many common branch names like "release" and
-        # "stabilization", as well as "HEAD" and "master".
-        tags = {r for r in refs if re.search(r'\d', r)}
+        # Compile regex once, faster for multiple calls
+        digit_search = re.compile(r'\d').search
+        tags = [r for r in refs if digit_search(r)]
         if verbose:
-            print("discarding '%s', no digits" % ",".join(refs - tags))
+            discard = [r for r in refs if not digit_search(r)]
+            print("discarding '%s', no digits" % ",".join(discard))
+    else:
+        # For downstream code, tags must be a list of tagname strings
+        tags = list(tags)
+
     if verbose:
         print("likely tags: %s" % ",".join(sorted(tags)))
-    for ref in sorted(tags):
-        # sorting will prefer e.g. "2.0" over "2.0rc1"
+
+    # ---- Optimized: precompile regex, use for-loop optimally ----
+    tag_prefix_len = len(tag_prefix)
+    match_digit = re.compile(r'\d').match
+    tags_sorted = sorted(tags)
+    for ref in tags_sorted:
         if ref.startswith(tag_prefix):
-            r = ref[len(tag_prefix):]
-            # Filter out refs that exactly match prefix or that don't start
-            # with a number once the prefix is stripped (mostly a concern
-            # when prefix is '')
-            if not re.match(r'\d', r):
+            r = ref[tag_prefix_len:]
+            if not match_digit(r):
                 continue
             if verbose:
                 print("picking %s" % r)
-            return {"version": r,
-                    "full-revisionid": keywords["full"].strip(),
-                    "dirty": False, "error": None,
-                    "date": date}
-    # no suitable tags, so version is "0+unknown", but full hex is still there
+            return {
+                "version": r,
+                "full-revisionid": keywords["full"].strip(),
+                "dirty": False, "error": None,
+                "date": date
+            }
+
     if verbose:
         print("no suitable tags, using unknown + full revision id")
-    return {"version": "0+unknown",
-            "full-revisionid": keywords["full"].strip(),
-            "dirty": False, "error": "no suitable tags", "date": None}
+    return {
+        "version": "0+unknown",
+        "full-revisionid": keywords["full"].strip(),
+        "dirty": False, "error": "no suitable tags", "date": None
+    }
 
 
 @register_vcs_handler("git", "pieces_from_vcs")
