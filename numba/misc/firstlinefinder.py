@@ -61,10 +61,14 @@ class FindDefFirstLine(ast.NodeVisitor):
 
 
 def _is_docstring(node):
-    if isinstance(node, ast.Expr):
-        if (isinstance(node.value, ast.Constant)
-                and isinstance(node.value.value, str)):
-            return True
+    # Optimize isinstance checks by reducing attribute lookups.
+    # This avoids an extra attribute lookup on node.value by first checking ast.Expr.
+    if type(node) is ast.Expr:
+        value = node.value
+        if type(value) is ast.Constant:
+            # Directly check type of value.value for str
+            if type(value.value) is str:
+                return True
     return False
 
 
