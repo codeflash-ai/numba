@@ -12,20 +12,17 @@ import llvmlite.binding as llvm
 
 
 class RecordLLVMPassTimings:
-    """A helper context manager to track LLVM pass timings.
-    """
+    """A helper context manager to track LLVM pass timings."""
 
     __slots__ = ["_data"]
 
     def __enter__(self):
-        """Enables the pass timing in LLVM.
-        """
+        """Enables the pass timing in LLVM."""
         llvm.set_time_passes(True)
         return self
 
     def __exit__(self, exc_val, exc_type, exc_tb):
-        """Reset timings and save report internally.
-        """
+        """Reset timings and save report internally."""
         self._data = llvm.report_and_reset_timings()
         llvm.set_time_passes(False)
         return
@@ -70,36 +67,23 @@ def _adjust_timings(records):
     total_rec = records[-1]
     assert total_rec.pass_name == "Total"  # guard for implementation error
 
-    def make_adjuster(attr):
-        time_attr = f"{attr}_time"
-        percent_attr = f"{attr}_percent"
-        time_getter = operator.attrgetter(time_attr)
-
-        def adjust(d):
-            """Compute percent x total_time = adjusted"""
-            total = time_getter(total_rec)
-            adjusted = total * d[percent_attr] * 0.01
-            d[time_attr] = adjusted
-            return d
-
-        return adjust
-
-    # Make adjustment functions for each field
-    adj_fns = [
-        make_adjuster(x) for x in ["user", "system", "user_system", "wall"]
-    ]
-
-    # Extract dictionaries from the namedtuples
-    dicts = map(lambda x: x._asdict(), records)
+    # Inline the adjustment loop for less lambda/dict churn; minimize function layers
+    total_user_time = total_rec.user_time
+    total_system_time = total_rec.system_time
+    total_user_system_time = total_rec.user_system_time
+    total_wall_time = total_rec.wall_time
 
     def chained(d):
-        # Chain the adjustment functions
-        for fn in adj_fns:
-            d = fn(d)
-        # Reconstruct the namedtuple
+        # Chain the adjustment functions, do all adjustments in one tight loop
+        # Compute percent x total_time = adjusted
+        d["user_time"] = total_user_time * d["user_percent"] * 0.01
+        d["system_time"] = total_system_time * d["system_percent"] * 0.01
+        d["user_system_time"] = total_user_system_time * d["user_system_percent"] * 0.01
+        d["wall_time"] = total_wall_time * d["wall_percent"] * 0.01
         return PassTimingRecord(**d)
 
-    return list(map(chained, dicts))
+    # Use list comprehension and _asdict() for less interpreter overhead
+    return [chained(x._asdict()) for x in records]
 
 
 class ProcessedPassTimings:
@@ -206,12 +190,6 @@ class ProcessedPassTimings:
             timing information for each pass.
             """
             lines = raw_data.splitlines()
-            colheader = r"[a-zA-Z+ ]+"
-            # Take at least one column header.
-            multicolheaders = fr"(?:\s*-+{colheader}-+)+"
-
-            line_iter = iter(lines)
-            # find column headers
             header_map = {
                 "User Time": "user",
                 "System Time": "system",
@@ -220,57 +198,71 @@ class ProcessedPassTimings:
                 "Instr": "instruction",
                 "Name": "pass_name",
             }
+
+            colheader = r"[a-zA-Z+ ]+"
+            multicolheaders = rf"(?:\s*-+{colheader}-+)+"
+
+            line_iter = iter(lines)
+            headers = None
+            m = None
+
+            # Pre-compile used regular expressions for speed
+            multicolheaders_re = re.compile(multicolheaders)
+            colname_re = re.compile(r"[a-zA-Z][a-zA-Z+ ]+")
+            num_pat = r"\s*((?:[0-9]+\.)?[0-9]+)"
+
             for ln in line_iter:
-                m = re.match(multicolheaders, ln)
-                if m:
+                if multicolheaders_re.match(ln):
                     # Get all the column headers
-                    raw_headers = re.findall(r"[a-zA-Z][a-zA-Z+ ]+", ln)
+                    raw_headers = colname_re.findall(ln)
                     headers = [header_map[k.strip()] for k in raw_headers]
                     break
 
-            assert headers[-1] == 'pass_name'
+            assert headers is not None
+            assert headers[-1] == "pass_name"
             # compute the list of available attributes from the column headers
             attrs = []
-            n = r"\s*((?:[0-9]+\.)?[0-9]+)"
             pat = ""
             for k in headers[:-1]:
                 if k == "instruction":
-                    pat += n
+                    pat += num_pat
                 else:
                     attrs.append(f"{k}_time")
                     attrs.append(f"{k}_percent")
-                    pat += rf"\s+(?:{n}\s*\({n}%\)|-+)"
+                    pat += rf"\s+(?:{num_pat}\s*\({num_pat}%\)|-+)"
 
             # put default value 0.0 to all missing attributes
-            missing = {}
-            for k in PassTimingRecord._fields:
-                if k not in attrs and k != 'pass_name':
-                    missing[k] = 0.0
-            # parse timings
+            fields = PassTimingRecord._fields
+            missing = {k: 0.0 for k in fields if k not in attrs and k != "pass_name"}
+
+            # parse timings: precompile overall row pattern for maximum speed
             pat += r"\s*(.*)"
+            row_re = re.compile(pat)
+
+            float_or_zero = lambda v: float(v) if v is not None else 0.0
+
             for ln in line_iter:
-                m = re.match(pat, ln)
+                m = row_re.match(ln)
                 if m is not None:
-                    raw_data = list(m.groups())
-                    data = {k: float(v) if v is not None else 0.0
-                            for k, v in zip(attrs, raw_data)}
+                    raw_data_row = list(m.groups())
+                    data = {k: float_or_zero(v) for k, v in zip(attrs, raw_data_row)}
                     data.update(missing)
-                    pass_name = raw_data[-1]
+                    pass_name = raw_data_row[-1]
                     rec = PassTimingRecord(
-                        pass_name=pass_name, **data,
+                        pass_name=pass_name,
+                        **data,
                     )
                     yield rec
                     if rec.pass_name == "Total":
-                        # "Total" means the report has ended
                         break
             # Check that we have reach the end of the report
-            remaining = '\n'.join(line_iter)
+            # Convert the iterator to list efficiently if might be large
+            remaining = "".join(line_iter)
             if remaining:
-                raise ValueError(
-                    f"unexpected text after parser finished:\n{remaining}"
-                )
+                raise ValueError(f"unexpected text after parser finished:\n{remaining}")
 
         # Parse raw data
+        # Avoid unnecessary list() conversion if `_adjust_timings` can work with iterator (but it expects a list)
         records = list(parse(self._raw_data))
         return _adjust_timings(records)
 
@@ -347,14 +339,13 @@ class PassTimingsCollection(Sequence):
         -------
         res: List[ProcessedPassTimings]
         """
-        return sorted(self._records,
-                      key=lambda x: x.timings.get_total_time(),
-                      reverse=True)
+        return sorted(
+            self._records, key=lambda x: x.timings.get_total_time(), reverse=True
+        )
 
     @property
     def is_empty(self):
-        """
-        """
+        """ """
         return not self._records
 
     def summary(self, topn=5):
@@ -401,8 +392,7 @@ class PassTimingsCollection(Sequence):
         return self._records[i]
 
     def __len__(self):
-        """Length of this collection.
-        """
+        """Length of this collection."""
         return len(self._records)
 
     def __str__(self):
