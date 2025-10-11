@@ -7,13 +7,16 @@ def get_lib_dirs():
     """
     Anaconda specific
     """
-    if sys.platform == 'win32':
+    prefix = sys.prefix
+    platform = sys.platform
+    if platform == 'win32':
         # on windows, historically `DLLs` has been used for CUDA libraries,
         # since approximately CUDA 9.2, `Library\bin` has been used.
-        dirnames = ['DLLs', os.path.join('Library', 'bin')]
+        dir1 = os.path.join(prefix, 'DLLs')
+        dir2 = os.path.join(prefix, 'Library', 'bin')
+        libdirs = [dir1, dir2]
     else:
-        dirnames = ['lib', ]
-    libdirs = [os.path.join(sys.prefix, x) for x in dirnames]
+        libdirs = [os.path.join(prefix, 'lib')]
     return libdirs
 
 
