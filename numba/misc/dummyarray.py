@@ -442,12 +442,10 @@ def _compute_size(start, stop, step):
     """Algorithm adapted from cpython rangeobject.c
     """
     if step > 0:
-        lo = start
-        hi = stop
+        if start >= stop:
+            return 0
+        return (stop - start - 1) // step + 1
     else:
-        lo = stop
-        hi = start
-        step = -step
-    if lo >= hi:
-        return 0
-    return (hi - lo - 1) // step + 1
+        if stop >= start:
+            return 0
+        return (start - stop - 1) // -step + 1
