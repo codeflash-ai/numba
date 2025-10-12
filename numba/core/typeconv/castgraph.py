@@ -8,6 +8,7 @@ class Conversion(enum.IntEnum):
     A conversion kind from one type to the other.  The enum members
     are ordered from stricter to looser.
     """
+
     # The two types are identical
     exact = 1
     # The two types are of the same kind, the destination type has more
@@ -37,10 +38,17 @@ class CastSet(object):
         self._rels = {}
 
     def insert(self, to, rel):
-        old = self.get(to)
-        setrel = min(rel, old)
-        self._rels[to] = setrel
-        return old != setrel
+        # Fast-path: if 'to' is already present, fetch directly instead of calling get()
+        _rels = self._rels
+        try:
+            old = _rels[to]
+        except KeyError:
+            old = Conversion.nil
+        # Avoid min call if rel == old
+        if rel >= old:
+            return False
+        _rels[to] = rel
+        return True
 
     def items(self):
         return self._rels.items()
@@ -52,9 +60,8 @@ class CastSet(object):
         return len(self._rels)
 
     def __repr__(self):
-        body = ["{rel}({ty})".format(rel=rel, ty=ty)
-                for ty, rel in self._rels.items()]
-        return "{" + ', '.join(body) + "}"
+        body = ["{rel}({ty})".format(rel=rel, ty=ty) for ty, rel in self._rels.items()]
+        return "{" + ", ".join(body) + "}"
 
     def __contains__(self, item):
         return item in self._rels
@@ -130,4 +137,3 @@ class TypeGraph(object):
 
     def unsafe(self, a, b):
         self.insert_rule(a, b, Conversion.unsafe)
-
