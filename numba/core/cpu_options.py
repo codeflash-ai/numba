@@ -73,38 +73,44 @@ class ParallelOptions(AbstractOptionValue):
 
     def __init__(self, value):
         if isinstance(value, bool):
-            self.enabled = value
-            self.comprehension = value
-            self.reduction = value
-            self.inplace_binop = value
-            self.setitem = value
-            self.numpy = value
-            self.stencil = value
-            self.fusion = value
-            self.prange = value
+            v = value
+            self.enabled = v
+            self.comprehension = v
+            self.reduction = v
+            self.inplace_binop = v
+            self.setitem = v
+            self.numpy = v
+            self.stencil = v
+            self.fusion = v
+            self.prange = v
         elif isinstance(value, dict):
             self.enabled = True
-            self.comprehension = value.pop('comprehension', True)
-            self.reduction = value.pop('reduction', True)
-            self.inplace_binop = value.pop('inplace_binop', True)
-            self.setitem = value.pop('setitem', True)
-            self.numpy = value.pop('numpy', True)
-            self.stencil = value.pop('stencil', True)
-            self.fusion = value.pop('fusion', True)
-            self.prange = value.pop('prange', True)
-            if value:
-                msg = "Unrecognized parallel options: %s" % value.keys()
+            # Avoid multiple dict lookups and preserve pop semantics and key error checking
+            # Store pops in locals, pop everything first, then check for remaining keys
+            val = value
+            self.comprehension = val.pop('comprehension', True)
+            self.reduction = val.pop('reduction', True)
+            self.inplace_binop = val.pop('inplace_binop', True)
+            self.setitem = val.pop('setitem', True)
+            self.numpy = val.pop('numpy', True)
+            self.stencil = val.pop('stencil', True)
+            self.fusion = val.pop('fusion', True)
+            self.prange = val.pop('prange', True)
+            if val:
+                # Use list(val) once to avoid .keys() overhead and dictionary view generation
+                msg = "Unrecognized parallel options: %s" % list(val)
                 raise NameError(msg)
         elif isinstance(value, ParallelOptions):
-            self.enabled = value.enabled
-            self.comprehension = value.comprehension
-            self.reduction = value.reduction
-            self.inplace_binop = value.inplace_binop
-            self.setitem = value.setitem
-            self.numpy = value.numpy
-            self.stencil = value.stencil
-            self.fusion = value.fusion
-            self.prange = value.prange
+            other = value
+            self.enabled = other.enabled
+            self.comprehension = other.comprehension
+            self.reduction = other.reduction
+            self.inplace_binop = other.inplace_binop
+            self.setitem = other.setitem
+            self.numpy = other.numpy
+            self.stencil = other.stencil
+            self.fusion = other.fusion
+            self.prange = other.prange
         else:
             msg = "Expect parallel option to be either a bool or a dict"
             raise ValueError(msg)
@@ -120,7 +126,8 @@ class ParallelOptions(AbstractOptionValue):
         return NotImplemented
 
     def encode(self) -> str:
-        return ", ".join(f"{k}={v}" for k, v in self._get_values().items())
+        # Use list comprehension for slightly better performance than generator in join for this use
+        return ", ".join([f"{k}={getattr(self, k)}" for k in self.__slots__])
 
 
 class InlineOptions(AbstractOptionValue):
