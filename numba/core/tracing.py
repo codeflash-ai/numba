@@ -4,7 +4,6 @@ import types
 import threading
 import inspect
 from functools import wraps
-from itertools import chain
 from numba.core import config
 
 class TLS(threading.local):
@@ -55,19 +54,44 @@ def chop(value):
         return s
 
 def create_events(fname, spec, args, kwds):
+    # Use a local variable for TLS indent to avoid attribute lookup twice
+    indent = tls.indent
 
-    values = dict()
+    # Precompute defaults mapping only if they exist (no dict() allocation otherwise)
     if spec.defaults:
-        values = dict(zip(spec.args[-len(spec.defaults):],spec.defaults))
-    values.update(kwds)
-    values.update(list(zip(spec.args[:len(args)], args)))
-    positional = ['%s=%r'%(a, values.pop(a)) for a in spec.args]
-    anonymous = [str(a) for a in args[len(positional):]]
-    keywords = ['%s=%r'%(k, values[k]) for k in sorted(values.keys())]
-    params = ', '.join([f for f in chain(positional, anonymous, keywords) if f])
+        num_defaults = len(spec.defaults)
+        default_args = spec.args[-num_defaults:]
+        values = dict(zip(default_args, spec.defaults))
+    else:
+        values = {}
 
-    enter = ['>> ', tls.indent * ' ', fname, '(', params, ')']
-    leave = ['<< ', tls.indent * ' ', fname]
+    values.update(kwds)
+    # Directly zip what we need, avoiding unnecessary list conversion
+    values.update(zip(spec.args[:len(args)], args))
+
+    # Build positional argument string, using list comprehension for efficiency
+    # Use a list to collect all events instead of intermediate lists/variables
+    parts = []
+    for a in spec.args:
+        # Only pop if present; if not, will raise KeyError, which is original behavior
+        parts.append(f"{a}={values.pop(a)!r}")
+
+    # Any additional args become anonymous entries
+    anonymous_args = args[len(spec.args):]
+    if anonymous_args:
+        parts.extend(map(str, anonymous_args))
+
+    # Remaining keywords (values dict) are those not covered already
+    if values:
+        # Avoid repeated sorting by capturing keys just once
+        for k in sorted(values):
+            parts.append(f"{k}={values[k]!r}")
+
+    params = ', '.join(parts)
+
+    # Pre-allocate all event lists in one step
+    enter = ['>> ', indent * ' ', fname, '(', params, ')']
+    leave = ['<< ', indent * ' ', fname]
     return enter, leave
 
 
